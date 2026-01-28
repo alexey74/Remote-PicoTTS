@@ -12,6 +12,7 @@ from homeassistant.components.tts import CONF_LANG, PLATFORM_SCHEMA, Provider
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from urllib.parse import quote
+from jinja2 import Environment, BaseLoader
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,12 +22,16 @@ SUPPORT_LANGUAGES = ["en-US", "en-GB", "de-DE", "es-ES", "fr-FR", "it-IT"]
 DEFAULT_LANG = "en-US"
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 59126
+DEFAULT_TEMPLATE = "{{ message }}"
+
+CONF_TEMPLATE = "template"
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Optional(CONF_LANG, default=DEFAULT_LANG): vol.In(SUPPORT_LANGUAGES),
         vol.Optional(CONF_HOST, default=DEFAULT_HOST): cv.string,
-        vol.Optional(CONF_PORT, default=DEFAULT_PORT): cv.port
+        vol.Optional(CONF_PORT, default=DEFAULT_PORT): cv.port,
+        vol.Optional(CONF_TEMPLATE, default=DEFAULT_TEMPLATE): cv.template
     }
 )
 
@@ -39,12 +44,14 @@ def get_engine(hass, config, discovery_info=None):
 class PicoProvider(Provider):
     """The Pico TTS API provider."""
 
-    def __init__(self, hass, lang, host, port):
+    def __init__(self, hass, lang, host, port, template):
         """Initialize Pico TTS provider."""
         self._hass = hass
         self._lang = lang
         self._host = host
         self._port = port
+        # trunk-ignore(bandit/B701)
+        self._rtemplate = Environment(loader=BaseLoader, autoescape=False).from_string(template)
         self.name = "PicoTTS (Remote)"
 
     @property
@@ -59,12 +66,15 @@ class PicoProvider(Provider):
 
     async def async_get_tts_audio(self, message, language, options=None):
         """Load TTS using a remote pico2wave server."""
+
+        rmessage = self._rtemplate.render(message=message)
+
         websession = async_get_clientsession(self._hass)
 
         try:
             with async_timeout.timeout(5):
                 url = "http://{}:{}/speak?".format(self._host, self._port)
-                encoded_message = quote(message)
+                encoded_message = quote(rmessage)
                 url_param = {
                     "lang": language,
                     "text": encoded_message,
