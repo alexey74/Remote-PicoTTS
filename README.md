@@ -35,6 +35,7 @@ tts:
   - platform: picotts_remote
     host: <host>
     port: <port>
+    template: "{{ message }}"
 
 ```
 
